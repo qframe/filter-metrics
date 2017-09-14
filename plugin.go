@@ -12,6 +12,8 @@ import (
 	"github.com/qframe/types/qchannel"
 	"github.com/qframe/types/constants"
 	"github.com/qframe/types/metrics"
+	"reflect"
+	"github.com/docker/docker/api/types"
 )
 
 const (
@@ -72,7 +74,6 @@ func (p *Plugin) Run() {
 						continue
 					}
 					dims := map[string]string{}
-					//qtypes.AssembleJSONDefaultDimensions(&msg)
 					dims["source"] = msg.GetLastSource()
 					met := qtypes_metrics.NewExt(p.Name, name, qtypes_metrics.Gauge, mval, dims, time.Unix(int64(tint), 0), true)
 					tags, tagok := msg.Tags["tags"]
@@ -87,18 +88,89 @@ func (p *Plugin) Run() {
 					p.Log("trace", "send metric")
 					p.QChan.Data.Send(met)
 				}
-/*			case qtypes_docker_events.ContainerEvent:
-				ce := val.(qtypes_docker_events.ContainerEvent)
-				if ce.StopProcessing(p.Plugin, false) {
+			case qtypes_messages.ContainerMessage:
+				msg := val.(qtypes_messages.ContainerMessage)
+				if msg.StopProcessing(p.Plugin, false) {
 					continue
 				}
-				switch ce.Event.Type {
-				case "container":
-					p.handleContainerEvent(ce)
-				}*/
+				name, nok := msg.Tags["name"]
+				tval, tok := msg.Tags["time"]
+				value, vok := msg.Tags["value"]
+				if nok && tok && vok {
+					mval, err := strconv.ParseFloat(value, 64)
+					if err != nil {
+						p.Log("error", fmt.Sprintf("Unable to parse value '%s' as float: %s", value, err.Error()))
+						continue
+					}
+					tint, err := strconv.Atoi(tval)
+					if err != nil {
+						p.Log("error", fmt.Sprintf("Unable to parse timestamp '%s' as int: %s", tint, err.Error()))
+						continue
+					}
+					dims := AssembleJSONDefaultDimensions(&msg.Container)
+					dims["source"] = msg.GetLastSource()
+					met := qtypes_metrics.NewExt(p.Name, name, qtypes_metrics.Gauge, mval, dims, time.Unix(int64(tint), 0), true)
+					tags, tagok := msg.Tags["tags"]
+					if tagok {
+						for _, item := range strings.Split(tags, ",") {
+							dim := strings.Split(item, "=")
+							if len(dim) == 2 {
+								met.Dimensions[dim[0]] = dim[1]
+							}
+						}
+					}
+					p.Log("trace", "send metric")
+					p.QChan.Data.Send(met)
+				}
+			default:
+				p.Log("trace", fmt.Sprintf("Dunno how to handle type: %s", reflect.TypeOf(val)))
 			}
 		}
 	}
+}
+
+// AssembleServiceSlot create {{.Service.Name}}.{{.Task.Slot}}
+func AssembleJSONServiceSlot(cnt *types.ContainerJSON) string {
+	if tn, tnok := cnt.Config.Labels["com.docker.swarm.task.name"]; tnok {
+		arr := strings.Split(tn, ".")
+		if len(arr) != 3 {
+			return "<nil>"
+		}
+		return fmt.Sprintf("%s.%s", arr[0], arr[1])
+	}
+	return "<nil>"
+}
+
+// AssembleServiceSlot create {{.Service.Name}}.{{.Task.Slot}}
+func AssembleJSONTaskSlot(cnt *types.ContainerJSON) string {
+	if tn, tnok := cnt.Config.Labels["com.docker.swarm.task.name"]; tnok {
+		arr := strings.Split(tn, ".")
+		if len(arr) != 3 {
+			return "<nil>"
+		}
+		return arr[1]
+	}
+	return "<nil>"
+}
+
+
+// AssembleDefaultDimensions derives a set of dimensions from the container information.
+func AssembleJSONDefaultDimensions(cnt *types.ContainerJSON) map[string]string {
+	dims := map[string]string{
+		"container_id":   cnt.ID,
+		"container_name": strings.Trim(cnt.Name, "/"),
+		"image_name":     cnt.Image,
+		"service_slot":   AssembleJSONServiceSlot(cnt),
+		"task_slot":   	  AssembleJSONTaskSlot(cnt),
+		"command":        strings.Replace(strings.Join(cnt.Config.Cmd, "#"), " ", "#", -1),
+		"created":        fmt.Sprintf("%d", cnt.Created),
+	}
+	for k, v := range cnt.Config.Labels {
+		dv := strings.Replace(v, " ", "#", -1)
+		dv = strings.Replace(v, ".", "_", -1)
+		dims[k] = dv
+	}
+	return dims
 }
 
 /*func (p *Plugin) handleContainerEvent(ce qtypes_docker_events.ContainerEvent) {
