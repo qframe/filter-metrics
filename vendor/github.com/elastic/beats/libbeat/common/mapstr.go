@@ -11,9 +11,8 @@ import (
 // Event metadata constants. These keys are used within libbeat to identify
 // metadata stored in an event.
 const (
-	EventMetadataKey = "_event_metadata"
-	FieldsKey        = "fields"
-	TagsKey          = "tags"
+	FieldsKey = "fields"
+	TagsKey   = "tags"
 )
 
 var (
@@ -154,6 +153,39 @@ func (m MapStr) String() string {
 		return fmt.Sprintf("Not valid json: %v", err)
 	}
 	return string(bytes)
+}
+
+// Flatten flattens the given MapStr and returns a flat MapStr.
+//
+// Example:
+//   "hello": MapStr{"world": "test" }
+//
+// This is converted to:
+//   "hello.world": "test"
+//
+// This can be useful for testing or logging.
+func (m MapStr) Flatten() MapStr {
+	return flatten("", m, MapStr{})
+}
+
+// flatten is a helper for Flatten. See docs for Flatten. For convenience the
+// out parameter is returned.
+func flatten(prefix string, in, out MapStr) MapStr {
+	for k, v := range in {
+		var fullKey string
+		if prefix == "" {
+			fullKey = k
+		} else {
+			fullKey = fmt.Sprintf("%s.%s", prefix, k)
+		}
+
+		if m, ok := tryToMapStr(v); ok {
+			flatten(fullKey, m, out)
+		} else {
+			out[fullKey] = v
+		}
+	}
+	return out
 }
 
 // MapStrUnion creates a new MapStr containing the union of the

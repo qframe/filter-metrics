@@ -6,13 +6,17 @@ import (
 	"strings"
 	"strconv"
 	"github.com/zpatrick/go-config"
-	"github.com/qnib/qframe-types"
 
+	"github.com/qframe/types/messages"
+	"github.com/qframe/types/plugin"
+	"github.com/qframe/types/qchannel"
+	"github.com/qframe/types/constants"
+	"github.com/qframe/types/metrics"
 )
 
 const (
 	version   = "0.2.3"
-	pluginTyp = "filter"
+	pluginTyp = qtypes_constants.FILTER
 	pluginPkg = "metric"
 )
 
@@ -30,12 +34,12 @@ var (
 )
 
 type Plugin struct {
-	qtypes.Plugin
+	*qtypes_plugin.Plugin
 }
 
-func New(qChan qtypes.QChan, cfg *config.Config, name string) (p Plugin, err error) {
+func New(qChan qtypes_qchannel.QChan, cfg *config.Config, name string) (p Plugin, err error) {
 	p = Plugin{
-		Plugin: qtypes.NewNamedPlugin(qChan, cfg, pluginTyp, pluginPkg, name, version),
+		Plugin: qtypes_plugin.NewNamedPlugin(qChan, cfg, pluginTyp, pluginPkg, name, version),
 	}
 	return
 }
@@ -48,21 +52,30 @@ func (p *Plugin) Run() {
 		select {
 		case val := <-dc.Read:
 			switch val.(type) {
-			case qtypes.Message:
-				msg := val.(qtypes.Message)
-				if p.StopProcessingMessage(msg, false) {
+			case qtypes_messages.Message:
+				msg := val.(qtypes_messages.Message)
+				if msg.StopProcessing(p.Plugin, false) {
 					continue
 				}
-				name, nok := msg.KV["name"]
-				tval, tok := msg.KV["time"]
-				value, vok := msg.KV["value"]
+				name, nok := msg.Tags["name"]
+				tval, tok := msg.Tags["time"]
+				value, vok := msg.Tags["value"]
 				if nok && tok && vok {
-					mval, _ := strconv.ParseFloat(value, 64)
-					tint, _ := strconv.Atoi(tval)
-					dims := qtypes.AssembleJSONDefaultDimensions(&msg.Container)
+					mval, err := strconv.ParseFloat(value, 64)
+					if err != nil {
+						p.Log("error", fmt.Sprintf("Unable to parse value '%s' as float: %s", value, err.Error()))
+						continue
+					}
+					tint, err := strconv.Atoi(tval)
+					if err != nil {
+						p.Log("error", fmt.Sprintf("Unable to parse timestamp '%s' as int: %s", tint, err.Error()))
+						continue
+					}
+					dims := map[string]string{}
+					//qtypes.AssembleJSONDefaultDimensions(&msg)
 					dims["source"] = msg.GetLastSource()
-					met := qtypes.NewExt(p.Name, name, qtypes.Gauge, mval, dims, time.Unix(int64(tint), 0), true)
-					tags, tagok := msg.KV["tags"]
+					met := qtypes_metrics.NewExt(p.Name, name, qtypes_metrics.Gauge, mval, dims, time.Unix(int64(tint), 0), true)
+					tags, tagok := msg.Tags["tags"]
 					if tagok {
 						for _, item := range strings.Split(tags, ",") {
 							dim := strings.Split(item, "=")
@@ -74,21 +87,21 @@ func (p *Plugin) Run() {
 					p.Log("trace", "send metric")
 					p.QChan.Data.Send(met)
 				}
-			case qtypes.ContainerEvent:
-				ce := val.(qtypes.ContainerEvent)
-				if p.StopProcessingCntEvent(ce, false) {
+/*			case qtypes_docker_events.ContainerEvent:
+				ce := val.(qtypes_docker_events.ContainerEvent)
+				if ce.StopProcessing(p.Plugin, false) {
 					continue
 				}
 				switch ce.Event.Type {
 				case "container":
 					p.handleContainerEvent(ce)
-				}
+				}*/
 			}
 		}
 	}
 }
 
-func (p *Plugin) handleContainerEvent(ce qtypes.ContainerEvent) {
+/*func (p *Plugin) handleContainerEvent(ce qtypes_docker_events.ContainerEvent) {
 	if strings.HasPrefix(ce.Event.Action, "exec_") {
 		p.MsgCount["execEvent"]++
 		return
@@ -110,3 +123,4 @@ func (p *Plugin) handleContainerEvent(ce qtypes.ContainerEvent) {
 		p.QChan.Data.Send(met)
 	}
 }
+*/
