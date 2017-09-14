@@ -109,16 +109,16 @@ func (p *Plugin) Run() {
 					}
 					dims := AssembleJSONDefaultDimensions(&msg.Container)
 					dims["source"] = msg.GetLastSource()
-					met := qtypes_metrics.NewExt(p.Name, name, qtypes_metrics.Gauge, mval, dims, time.Unix(int64(tint), 0), true)
 					tags, tagok := msg.Tags["tags"]
 					if tagok {
-						for _, item := range strings.Split(tags, ",") {
+						for _, item := range strings.Split(tags, " ") {
 							dim := strings.Split(item, "=")
 							if len(dim) == 2 {
-								met.Dimensions[dim[0]] = dim[1]
+								dims[dim[0]] = dim[1]
 							}
 						}
 					}
+					met := qtypes_metrics.NewExt(p.Name, name, qtypes_metrics.Gauge, mval, dims, time.Unix(int64(tint), 0), true)
 					p.Log("trace", "send metric")
 					p.QChan.Data.Send(met)
 				}
