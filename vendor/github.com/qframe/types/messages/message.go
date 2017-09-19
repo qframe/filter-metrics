@@ -2,6 +2,7 @@ package qtypes_messages
 
 import (
 	"encoding/json"
+	"github.com/deckarep/golang-set"
 	"github.com/qframe/types/plugin"
 	"fmt"
 )
@@ -20,21 +21,30 @@ func NewMessage(b Base, msg string) Message {
 	return m
 }
 
-func (m *Message) ParseJsonMap(p *qtypes_plugin.Plugin, kv map[string]string) {
-	for _, txt := range kv {
-		p.Log("debug", fmt.Sprintf("txt to parse to json: %s", txt))
-		byt := []byte(txt)
+// ParseJSONMap iterates over set of potential keys and if unmarshalls the string value of all keys into a new map.
+func (m *Message) ParseJsonMap(p *qtypes_plugin.Plugin, keys mapset.Set, kv map[string]string) map[string]string {
+	res := map[string]string{}
+	it := keys.Iterator()
+	for val := range it.C {
+		key := val.(string)
+		v, ok := kv[key]
+		if !ok {
+			p.Log("debug", fmt.Sprintf("Could not find key '%s' in Tags: %v", key, kv))
+			continue
+		}
+		p.Log("debug", fmt.Sprintf("unmarshall: %s", v))
+		byt := []byte(v)
 		var dat map[string]interface{}
 		json.Unmarshal(byt, &dat)
 		for k, v := range dat {
-			if _, ok := m.Tags[k]; !ok {
-				p.Log("debug", fmt.Sprintf("New key in tag '%s' for message '%s'", k, txt))
-				m.Tags[k] = fmt.Sprintf("%s", v)
-			} else {
-				p.Log("debug", fmt.Sprintf("Overwrite tag '%s' in message '%s'", k, txt))
-				m.Tags[k] = fmt.Sprintf("%s", v)
-			}
+			res[k] = fmt.Sprintf("%v", v)
 		}
 	}
+	return res
+}
 
+// ToStringRFC54242 returns a string in RFC5424 format
+func (m *Message) ToStringRFC54242() (res string, err error) {
+
+	return
 }

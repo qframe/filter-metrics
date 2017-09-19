@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	version = "0.1.6"
+	version = "0.1.8"
 )
 
 type Base struct {
@@ -19,13 +19,18 @@ type Base struct {
 	SourcePath		[]string
 	SourceSuccess 	bool
 	Tags 			map[string]string // Additional KV
+	Msg				string
 }
 
 func NewBase(src string) Base {
 	return NewTimedBase(src, time.Now())
 }
 
-func NewTimedBase(src string, t time.Time) Base {
+func NewBaseMessage(src , msg string) Base {
+	return NewTimeBaseMessage(src, time.Now(), msg)
+}
+
+func NewTimeBaseMessage(src string, t time.Time, msg string) Base {
 	b := Base {
 		BaseVersion: version,
 		ID: "",
@@ -34,8 +39,13 @@ func NewTimedBase(src string, t time.Time) Base {
 		SourcePath: []string{src},
 		SourceSuccess: true,
 		Tags: map[string]string{},
+		Msg: msg,
 	}
 	return b
+}
+
+func NewTimedBase(src string, t time.Time) Base {
+	return NewTimeBaseMessage(src, t, "")
 }
 
 func NewBaseFromBase(src string, b Base) Base {
@@ -47,6 +57,7 @@ func NewBaseFromBase(src string, b Base) Base {
 		SourcePath: append(b.SourcePath, src),
 		SourceSuccess: b.SourceSuccess,
 		Tags: b.Tags,
+		Msg: "",
 	}
 }
 
@@ -139,5 +150,6 @@ func (b *Base) StopProcessing(p *qtypes_plugin.Plugin, allowEmptyInput bool) boo
 		p.Log("trace", msg)
 		return true
 	}
+	b.AppendSource(p.Name)
 	return false
 }

@@ -49,6 +49,18 @@ func New(qChan qtypes_qchannel.QChan, cfg *config.Config, name string) (p Plugin
 // Run fetches everything from the Data channel and flushes it to stdout
 func (p *Plugin) Run() {
 	p.Log("notice", fmt.Sprintf("Start plugin v%s", p.Version))
+	rewriteDims := strings.Split(p.CfgStringOr("rewrite-dimensions", ""), ",")
+	limitDims := strings.Split(p.CfgStringOr("limit-dimensions", ""), ",")
+	rwDims := map[string]string{}
+	for _, elem := range rewriteDims {
+		kv := strings.Split(elem, ":")
+		if len(kv) == 2 {
+			rwDims[kv[0]] = kv[1]
+		} else {
+			p.Log("warn", fmt.Sprintf("Could not split rwDim '%s' by ':'", elem))
+		}
+	}
+	ignoreContainerEvents := p.CfgBoolOr("ignore-container-events", true)
 	dc := p.QChan.Data.Join()
 	for {
 		select {
@@ -108,6 +120,7 @@ func (p *Plugin) Run() {
 						continue
 					}
 					dims := AssembleJSONDefaultDimensions(&msg.Container)
+					dims = RewriteDims(rwDims, dims)
 					dims["source"] = msg.GetLastSource()
 					tags, tagok := msg.Tags["tags"]
 					if tagok {
@@ -118,15 +131,51 @@ func (p *Plugin) Run() {
 							}
 						}
 					}
-					met := qtypes_metrics.NewExt(p.Name, name, qtypes_metrics.Gauge, mval, dims, time.Unix(int64(tint), 0), true)
+					// TODO: Iterating yet again over the dimensions, not very efficient
+					p.Log("debug", fmt.Sprintf("Len(limitDims)=%d | %v", len(limitDims), limitDims))
+					endDims := map[string]string{}
+					if len(limitDims) > 0 {
+						for k, v := range dims {
+							for _, allowKey := range limitDims {
+								if allowKey == k {
+									endDims[k] = v
+									break
+								}
+							}
+						}
+					} else {
+						endDims = dims
+					}
+					met := qtypes_metrics.NewExt(p.Name, name, qtypes_metrics.Gauge, mval, endDims, time.Unix(int64(tint), 0), true)
 					p.Log("trace", "send metric")
 					p.QChan.Data.Send(met)
 				}
 			default:
+				if ignoreContainerEvents {
+					continue
+				}
 				p.Log("trace", fmt.Sprintf("Dunno how to handle type: %s", reflect.TypeOf(val)))
 			}
 		}
 	}
+}
+
+func RewriteDims(rw map[string]string, dims map[string]string) map[string]string {
+	res := map[string]string{}
+	for k,v := range dims {
+		rewritten := false
+		for oKey, nKey := range rw {
+			if oKey == k {
+				res[nKey] = v
+				rewritten = true
+				break
+			}
+		}
+		if ! rewritten {
+			res[k] = v
+		}
+	}
+	return res
 }
 
 // AssembleServiceSlot create {{.Service.Name}}.{{.Task.Slot}}
@@ -157,19 +206,21 @@ func AssembleJSONTaskSlot(cnt *types.ContainerJSON) string {
 // AssembleDefaultDimensions derives a set of dimensions from the container information.
 func AssembleJSONDefaultDimensions(cnt *types.ContainerJSON) map[string]string {
 	dims := map[string]string{
+		"service_namespace": cnt.Config.Labels["com.docker.stack.namespace"],
 		"container_id":   cnt.ID,
 		"container_name": strings.Trim(cnt.Name, "/"),
 		"image_name":     cnt.Image,
 		"service_slot":   AssembleJSONServiceSlot(cnt),
 		"task_slot":   	  AssembleJSONTaskSlot(cnt),
 		"command":        strings.Replace(strings.Join(cnt.Config.Cmd, "#"), " ", "#", -1),
-		"created":        fmt.Sprintf("%d", cnt.Created),
+		"created":        cnt.Created,
 	}
-	for k, v := range cnt.Config.Labels {
+	//TODO: When exensivly using labels, this hurts
+	/*for k, v := range cnt.Config.Labels {
 		dv := strings.Replace(v, " ", "#", -1)
 		dv = strings.Replace(v, ".", "_", -1)
 		dims[k] = dv
-	}
+	}*/
 	return dims
 }
 
