@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	version   = "0.2.6"
+	version   = "0.2.7"
 	pluginTyp = qtypes_constants.FILTER
 	pluginPkg = "metric"
 )
