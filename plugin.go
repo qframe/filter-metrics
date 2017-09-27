@@ -120,6 +120,7 @@ func (p *Plugin) Run() {
 						continue
 					}
 					dims := AssembleJSONDefaultDimensions(&msg.Container)
+					dims = AddEngineDims(dims, &msg.Engine)
 					dims = RewriteDims(rwDims, dims)
 					dims["source"] = msg.GetLastSource()
 					tags, tagok := msg.Tags["tags"]
@@ -158,6 +159,19 @@ func (p *Plugin) Run() {
 			}
 		}
 	}
+}
+
+func AddEngineDims(dims map[string]string, eng *types.Info) map[string]string {
+	res := map[string]string{
+		"engine_name": eng.Name,
+		"engine_kernel": eng.KernelVersion,
+		"engine_address": eng.Swarm.NodeAddr,
+		"engine_version": eng.ServerVersion,
+	}
+	for k,v := range dims {
+		res[k] = v
+	}
+	return res
 }
 
 func RewriteDims(rw map[string]string, dims map[string]string) map[string]string {
