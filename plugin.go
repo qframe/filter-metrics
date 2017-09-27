@@ -161,6 +161,7 @@ func (p *Plugin) Run() {
 	}
 }
 
+// AddEngineDims annotates engine information.
 func AddEngineDims(dims map[string]string, eng *types.Info) map[string]string {
 	res := map[string]string{
 		"engine_name": eng.Name,
